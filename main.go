@@ -6,8 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"text/template"
 	"time"
@@ -21,12 +21,41 @@ import (
 	"github.com/aws/aws-sdk-go/service/sts"
 )
 
+type valueFlags map[string]string
+
+func (i *valueFlags) String() string {
+	keys := make([]string, 0, len(*i))
+	for k := range *i {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var buf bytes.Buffer
+	for _, k := range keys {
+		fmt.Fprintf(&buf, "%s=%s\n", k, (*i)[k])
+	}
+	if l := buf.Len(); l > 0 {
+		buf.Truncate(l - 1)
+	}
+	return buf.String()
+}
+
+func (i *valueFlags) Set(value string) error {
+	ss := strings.SplitN(value, "=", 2)
+	if len(ss) != 2 {
+		return fmt.Errorf("wrong value %q", value)
+	}
+	(*i)[ss[0]] = ss[1]
+	return nil
+}
+
 func main() {
 	var (
 		timeout              = flag.Duration("timeout", time.Minute*30, "athena query timeout")
 		athenaS3PathTemplate = flag.String("athena.s3.path", `s3://aws-athena-query-results-{{.Account}}-{{.Region}}/Unsaved/{{.Now.Format "2006"}}/{{.Now.Format "01"}}/{{.Now.Format "02"}}`, "athena result bucket")
 		awsRegion            = flag.String("region", "eu-west-1", "aws region")
+		values               = valueFlags(map[string]string{})
 	)
+	flag.Var(&values, "val", "(repeated) values separated by '='. e.g. key=val")
 	flag.Parse()
 
 	awsSession := session.New(aws.NewConfig().WithRegion(*awsRegion))
@@ -53,9 +82,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	query := execTemplate(string(sql), values)
+
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
-	queryExecution, err := awsCli.executeQuery(ctx, string(sql), athenaS3Path)
+	queryExecution, err := awsCli.executeQuery(ctx, query, athenaS3Path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "could not execute athena query: %v", err)
 		os.Exit(1)
@@ -70,17 +101,6 @@ func main() {
 	if len(data) > 0 {
 		fmt.Print(string(data))
 	}
-}
-
-func splitS3Path(path string) (bucket, key string, err error) {
-	outURL, err := url.Parse(path)
-	if err != nil {
-		return "", "", fmt.Errorf("could not parse s3 URL %q: %v", path, err)
-	}
-	if outURL.Scheme != "s3" {
-		return "", "", fmt.Errorf("invalid scheme in s3 URL: %q ", outURL.Scheme)
-	}
-	return outURL.Host, strings.TrimLeft(outURL.Path, "/"), nil
 }
 
 func execTemplate(tmpl string, val interface{}) string {
