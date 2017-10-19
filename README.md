@@ -11,7 +11,6 @@ go get -u github.com/advincze/athenaq
 
 
 ### use:
-
 ```shell
 athenaq -h
 Usage of athenaq:
@@ -25,6 +24,29 @@ Usage of athenaq:
     	(repeated) values separated by '='. e.g. key=val
 ```
 
+the query is loaded from `STDIN`
+
+either string:
+```shell
+athenaq <<< "show databases"
+```
+or:
+```shell
+echo "show databases" | athenaq
+```
+
+
+or a file
+```shell
+athenaq < myquery.sql
+```
+or:
+http://porkmail.org/era/unix/award.html:
+```shell
+cat myquery.sql | athenaq 
+```
+
+
 ### examples:
 
 ```shell
@@ -35,10 +57,14 @@ athenaq <<< "show databases"
 athenaq <<< "show tables"
 ```
 
-
-if you have an existing table in athena
+if you have an existing table in athena:
 ```shell
 athenaq <<< "select * from users limit 10"
+```
+
+same thing with variables:
+```shell
+athenaq -val lim=10 -val tbl=users <<< "select * from {{ .tbl }} limit {{ .lim }}"
 ```
 
 
