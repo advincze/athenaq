@@ -12,6 +12,8 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/advincze/s3path"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/athena"
@@ -101,11 +103,11 @@ func (awsCli *awsCli) AccountID() (string, error) {
 	return *getCallerIdentityOut.Account, nil
 }
 
-func (awsCli *awsCli) executeQuery(ctx context.Context, sql, athenaS3Path string) (*athena.QueryExecution, error) {
+func (awsCli *awsCli) executeQuery(ctx context.Context, sql, outPath string) (*athena.QueryExecution, error) {
 	startQueryExecutionOut, err := awsCli.athena.StartQueryExecutionWithContext(ctx, &athena.StartQueryExecutionInput{
-		QueryString: aws.String(string(sql)),
+		QueryString: aws.String(sql),
 		ResultConfiguration: &athena.ResultConfiguration{
-			OutputLocation: &athenaS3Path,
+			OutputLocation: aws.String(outPath),
 		},
 	})
 	if err != nil {
@@ -137,15 +139,15 @@ func (awsCli *awsCli) executeQuery(ctx context.Context, sql, athenaS3Path string
 	}
 }
 
-func (awsCli *awsCli) getS3Contents(ctx context.Context, s3Path string) ([]byte, error) {
-	resBucket, resKey, err := splitS3Path(s3Path)
+func (awsCli *awsCli) getS3Contents(ctx context.Context, path string) ([]byte, error) {
+	s3Path, err := s3path.Parse(path)
 	if err != nil {
-		return nil, fmt.Errorf("error splitting s3 URL: %v", err)
+		return nil, fmt.Errorf("error parsing s3 URL: %v", err)
 	}
 
 	getObjOut, err := awsCli.s3.GetObjectWithContext(ctx, &s3.GetObjectInput{
-		Bucket: &resBucket,
-		Key:    &resKey,
+		Bucket: &s3Path.Bucket,
+		Key:    &s3Path.Key,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("could not get result from  %q: %v", s3Path, err)
