@@ -15,6 +15,7 @@ import (
 	"github.com/advincze/s3path"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/athena"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -51,7 +52,7 @@ func (i *valueFlags) Set(value string) error {
 func main() {
 	var (
 		timeout              = flag.Duration("timeout", time.Minute*30, "athena query timeout")
-		athenaS3PathTemplate = flag.String("athena.s3.path", `s3://aws-athena-query-results-{{.Account}}-{{.Region}}/Unsaved/{{.Now.Format "2006"}}/{{.Now.Format "01"}}/{{.Now.Format "02"}}`, "athena result bucket")
+		athenaS3PathTemplate = flag.String("temp.path", `s3://aws-athena-query-results-{{.Account}}-{{.Region}}/Unsaved/{{.Now.Format "2006"}}/{{.Now.Format "01"}}/{{.Now.Format "02"}}`, "athena result bucket")
 		awsRegion            = flag.String("region", "eu-west-1", "aws region")
 		values               = valueFlags(map[string]string{})
 	)
@@ -75,6 +76,12 @@ func main() {
 		Account, Region string
 		Now             time.Time
 	}{accountID, *awsRegion, time.Now()})
+
+	err = awsCli.CreateBucketIfNotExists(athenaS3Path, *awsRegion)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not create athena temp bucket: %v", err)
+		os.Exit(1)
+	}
 
 	sql, err := ioutil.ReadAll(os.Stdin)
 	if err != nil {
@@ -115,17 +122,24 @@ type awsCli struct {
 	athena *athena.Athena
 }
 
-func (awsCli *awsCli) CreateBucketIfNotExists(bucket, region string) error {
+func (awsCli *awsCli) CreateBucketIfNotExists(path, region string) error {
+	s3url, err := s3path.Parse(path)
+	if err != nil {
+		return err
+	}
 
-	_, err := awsCli.s3.CreateBucket(&s3.CreateBucketInput{
-		Bucket: &bucket,
+	_, err = awsCli.s3.CreateBucket(&s3.CreateBucketInput{
+		Bucket: &s3url.Bucket,
 		CreateBucketConfiguration: &s3.CreateBucketConfiguration{
 			LocationConstraint: &region,
 		},
 	})
 	if err != nil {
-		if err.Error() == s3.ErrCodeBucketAlreadyExists {
-			return nil
+		if awsErr, ok := err.(awserr.Error); ok {
+			switch awsErr.Code() {
+			case s3.ErrCodeBucketAlreadyExists, s3.ErrCodeBucketAlreadyOwnedByYou:
+				return nil
+			}
 		}
 		return err
 	}
