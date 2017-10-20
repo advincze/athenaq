@@ -115,6 +115,23 @@ type awsCli struct {
 	athena *athena.Athena
 }
 
+func (awsCli *awsCli) CreateBucketIfNotExists(bucket, region string) error {
+
+	_, err := awsCli.s3.CreateBucket(&s3.CreateBucketInput{
+		Bucket: &bucket,
+		CreateBucketConfiguration: &s3.CreateBucketConfiguration{
+			LocationConstraint: &region,
+		},
+	})
+	if err != nil {
+		if err.Error() == s3.ErrCodeBucketAlreadyExists {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 func (awsCli *awsCli) AccountID() (string, error) {
 	getCallerIdentityOut, err := awsCli.sts.GetCallerIdentity(nil)
 	if err != nil {
