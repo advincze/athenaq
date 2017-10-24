@@ -5,12 +5,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"net/url"
 	"os"
-	"sort"
+	"path"
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/advincze/s3path"
 
@@ -22,104 +26,185 @@ import (
 	"github.com/aws/aws-sdk-go/service/sts"
 )
 
-type valueFlags map[string]string
-
-func (i *valueFlags) String() string {
-	keys := make([]string, 0, len(*i))
-	for k := range *i {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	var buf bytes.Buffer
-	for _, k := range keys {
-		fmt.Fprintf(&buf, "%s=%s\n", k, (*i)[k])
-	}
-	if l := buf.Len(); l > 0 {
-		buf.Truncate(l - 1)
-	}
-	return buf.String()
-}
-
-func (i *valueFlags) Set(value string) error {
-	ss := strings.SplitN(value, "=", 2)
-	if len(ss) != 2 {
-		return fmt.Errorf("wrong value %q", value)
-	}
-	(*i)[ss[0]] = ss[1]
-	return nil
-}
-
 func main() {
 	var (
-		timeout              = flag.Duration("timeout", time.Minute*30, "athena query timeout")
-		athenaS3PathTemplate = flag.String("temp.path", `s3://aws-athena-query-results-{{.Account}}-{{.Region}}/Unsaved/{{.Now.Format "2006"}}/{{.Now.Format "01"}}/{{.Now.Format "02"}}`, "athena result bucket")
-		awsRegion            = flag.String("region", "eu-west-1", "aws region")
-		values               = valueFlags(map[string]string{})
+		timeout              = flag.Duration("timeout", time.Minute*60, "athena query timeout")
+		athenaS3PathTemplate = flag.String("temp.path", `s3://aws-athena-query-results-{{ Account }}-{{ .Region }}/Unsaved/{{ Now.Format "2006"}}/{{ Now.Format "01" }}/{{ Now.Format "02"}}`, "athena result bucket")
+		awsRegion            = flag.String("region", "eu-central-1", "aws region")
+		output               = flag.String("out", "", `output path ("-" == no output| "" == STDOUT | file://... | s3://...)`)
+		dry                  = flag.Bool("dry", false, "dry run")
 	)
-	flag.Var(&values, "val", "(repeated) values separated by '='. e.g. key=val")
 	flag.Parse()
 
-	awsSession := session.New(aws.NewConfig().WithRegion(*awsRegion))
+	awsCli, err := newAWS(*awsRegion, *athenaS3PathTemplate)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not initialize aws client: %v", err)
+		os.Exit(1)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+
+	queries, err := readQueries(os.Stdin)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not read queries: %v", err)
+		os.Exit(1)
+	}
+
+	var out io.Writer
+	switch *output {
+	case "-":
+		out = nil
+	case "":
+		out = os.Stdout
+	default:
+		var buf bytes.Buffer
+		defer func() {
+			err := awsCli.writeOut(bytes.NewReader(buf.Bytes()), *output)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "could write result: %v", err)
+				os.Exit(1)
+			}
+		}()
+		out = &buf
+	}
+
+	for _, query := range queries {
+		if *dry {
+			fmt.Println("execute query:", query)
+			continue
+		}
+		err = awsCli.execQuery(ctx, query, out)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "could not execute athena query: %v", err)
+			os.Exit(1)
+		}
+	}
+}
+
+func readQueries(r io.Reader) ([]string, error) {
+	in, err := ioutil.ReadAll(r)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not read input: %v", err)
+		os.Exit(1)
+	}
+	var queries []string
+	for _, s := range strings.Split(string(in), ";") {
+		if strim := strings.TrimSpace(s); strim != "" {
+			query, err := execTemplate(strim, nil, nil)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not render query")
+			}
+
+			queries = append(queries, query)
+		}
+	}
+
+	return queries, nil
+}
+
+type awsCli struct {
+	sts        *sts.STS
+	s3         *s3.S3
+	athena     *athena.Athena
+	athenaPath string
+}
+
+func newAWS(region, athenaPathTemplate string) (*awsCli, error) {
+	awsSession := session.New(aws.NewConfig().WithRegion(region))
 	awsCli := &awsCli{
 		sts:    sts.New(awsSession),
 		s3:     s3.New(awsSession),
 		athena: athena.New(awsSession),
 	}
 
-	accountID, err := awsCli.AccountID()
+	athenaS3Path, err := execTemplate(athenaPathTemplate, map[string]interface{}{
+		"Account": awsCli.AccountID,
+		"Now":     time.Now,
+	}, struct{ Region string }{region})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "could not retrieve account ID: %v", err)
-		os.Exit(1)
+		return nil, errors.Wrap(err, "could not render athena s3 path")
 	}
 
-	athenaS3Path := execTemplate(*athenaS3PathTemplate, struct {
-		Account, Region string
-		Now             time.Time
-	}{accountID, *awsRegion, time.Now()})
-
-	err = awsCli.CreateBucketIfNotExists(athenaS3Path, *awsRegion)
+	err = awsCli.CreateBucketIfNotExists(athenaS3Path, region)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "could not create athena temp bucket: %v", err)
-		os.Exit(1)
+		return nil, errors.Wrap(err, "could not create athena temp bucket")
 	}
 
-	sql, err := ioutil.ReadAll(os.Stdin)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "could not read query from STDIN: %v", err)
-		os.Exit(1)
-	}
+	awsCli.athenaPath = athenaS3Path
 
-	query := execTemplate(string(sql), values)
-
-	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
-	defer cancel()
-	queryExecution, err := awsCli.executeQuery(ctx, query, athenaS3Path)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "could not execute athena query: %v", err)
-		os.Exit(1)
-	}
-
-	data, err := awsCli.getS3Contents(ctx, *queryExecution.ResultConfiguration.OutputLocation)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "could not get s3 contents: %v", err)
-		os.Exit(1)
-	}
-
-	if len(data) > 0 {
-		fmt.Print(string(data))
-	}
+	return awsCli, nil
 }
 
-func execTemplate(tmpl string, val interface{}) string {
+func (awsCli *awsCli) writeOut(r io.ReadSeeker, outPath string) error {
+	p, _ := url.Parse(outPath)
+	switch p.Scheme {
+	case "", "file":
+		fileName := path.Join(p.Host, p.Path)
+		data, err := ioutil.ReadAll(r)
+		if err != nil {
+			return err
+		}
+		return ioutil.WriteFile(fileName, data, 0644)
+	case "s3":
+		bucket := p.Host
+		key := strings.TrimLeft(p.Path, "/")
+		if bucket == "" || key == "" {
+			return fmt.Errorf("s3 bucket or key empty in %q", outPath)
+		}
+		_, err := awsCli.s3.PutObject(&s3.PutObjectInput{
+			Body:   r,
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		if err != nil {
+			return errors.Wrap(err, "could not upload result to s3")
+		}
+	default:
+		return fmt.Errorf("UNKNOWN: schema %q", outPath)
+	}
+	return nil
+}
+
+func (awsCli *awsCli) execQuery(ctx context.Context, query string, w io.Writer) error {
+	queryExecution, err := awsCli.executeQuery(ctx, query)
+	if err != nil {
+		return errors.Wrap(err, "could not execute athena query")
+	}
+
+	if w != nil {
+		data, err := awsCli.getS3Contents(ctx, *queryExecution.ResultConfiguration.OutputLocation)
+		if err != nil {
+			return errors.Wrap(err, "could not get s3 contents")
+		}
+		_, err = io.Copy(w, bytes.NewReader(data))
+		return err
+	}
+
+	return nil
+}
+
+func execTemplate(tmpl string, funcs map[string]interface{}, values interface{}) (string, error) {
 	var buf bytes.Buffer
-	template.Must(template.New("").Parse(tmpl)).Execute(&buf, val)
-	return buf.String()
-}
+	if values == nil {
+		m := map[string]string{}
+		for _, e := range os.Environ() {
+			pair := strings.SplitN(e, "=", 2)
+			m[pair[0]] = pair[1]
+		}
+		values = m
+	}
+	f := template.FuncMap{}
+	for k, v := range funcs {
+		f[k] = v
+	}
+	f["Split"] = strings.Split
 
-type awsCli struct {
-	sts    *sts.STS
-	s3     *s3.S3
-	athena *athena.Athena
+	err := template.Must(template.New("").
+		Funcs(f).
+		Parse(tmpl)).Execute(&buf, values)
+
+	return buf.String(), err
 }
 
 func (awsCli *awsCli) CreateBucketIfNotExists(path, region string) error {
@@ -149,16 +234,16 @@ func (awsCli *awsCli) CreateBucketIfNotExists(path, region string) error {
 func (awsCli *awsCli) AccountID() (string, error) {
 	getCallerIdentityOut, err := awsCli.sts.GetCallerIdentity(nil)
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "could not get caller identity")
 	}
 	return *getCallerIdentityOut.Account, nil
 }
 
-func (awsCli *awsCli) executeQuery(ctx context.Context, sql, outPath string) (*athena.QueryExecution, error) {
+func (awsCli *awsCli) executeQuery(ctx context.Context, sql string) (*athena.QueryExecution, error) {
 	startQueryExecutionOut, err := awsCli.athena.StartQueryExecutionWithContext(ctx, &athena.StartQueryExecutionInput{
 		QueryString: aws.String(sql),
 		ResultConfiguration: &athena.ResultConfiguration{
-			OutputLocation: aws.String(outPath),
+			OutputLocation: aws.String(awsCli.athenaPath),
 		},
 	})
 	if err != nil {
