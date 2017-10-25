@@ -34,7 +34,9 @@ for templating you can use the default go [text/template](https://golang.org/pkg
 
 all environment variables are passed to the template.
 
-additionaly [`strings.Split`](https://golang.org/pkg/strings/#Split) is registered in the [`template.FuncMap`](https://golang.org/pkg/text/template/#Template.Funcs)
+additionaly all top level functions from [`strings`](https://golang.org/pkg/strings) are registered 
+
+e.g. [`strings.Split`](https://golang.org/pkg/strings/#Split) is registered in the [`template.FuncMap`](https://golang.org/pkg/text/template/#Template.Funcs)
 
 if you need any more functions, just let me know
 

@@ -213,7 +213,50 @@ func execTemplate(tmpl string, funcs map[string]interface{}, values interface{})
 	for k, v := range funcs {
 		f[k] = v
 	}
+
+	f["Compare"] = strings.Compare
+	f["Contains"] = strings.Contains
+	f["ContainsAny"] = strings.ContainsAny
+	f["ContainsRune"] = strings.ContainsRune
+	f["Count"] = strings.Count
+	f["EqualFold"] = strings.EqualFold
+	f["Fields"] = strings.Fields
+	f["FieldsFunc"] = strings.FieldsFunc
+	f["HasPrefix"] = strings.HasPrefix
+	f["HasSuffix"] = strings.HasSuffix
+	f["Index"] = strings.Index
+	f["IndexAny"] = strings.IndexAny
+	f["IndexByte"] = strings.IndexByte
+	f["IndexFunc"] = strings.IndexFunc
+	f["IndexRune"] = strings.IndexRune
+	f["Join"] = strings.Join
+	f["LastIndex"] = strings.LastIndex
+	f["LastIndexAny"] = strings.LastIndexAny
+	f["LastIndexByte"] = strings.LastIndexByte
+	f["LastIndexFunc"] = strings.LastIndexFunc
+	f["Map"] = strings.Map
+	f["Repeat"] = strings.Repeat
+	f["Replace"] = strings.Replace
 	f["Split"] = strings.Split
+	f["SplitAfter"] = strings.SplitAfter
+	f["SplitAfterN"] = strings.SplitAfterN
+	f["SplitN"] = strings.SplitN
+	f["Title"] = strings.Title
+	f["ToLower"] = strings.ToLower
+	f["ToLowerSpecial"] = strings.ToLowerSpecial
+	f["ToTitle"] = strings.ToTitle
+	f["ToTitleSpecial"] = strings.ToTitleSpecial
+	f["ToUpper"] = strings.ToUpper
+	f["ToUpperSpecial"] = strings.ToUpperSpecial
+	f["Trim"] = strings.Trim
+	f["TrimFunc"] = strings.TrimFunc
+	f["TrimLeft"] = strings.TrimLeft
+	f["TrimLeftFunc"] = strings.TrimLeftFunc
+	f["TrimPrefix"] = strings.TrimPrefix
+	f["TrimRight"] = strings.TrimRight
+	f["TrimRightFunc"] = strings.TrimRightFunc
+	f["TrimSpace"] = strings.TrimSpace
+	f["TrimSuffix"] = strings.TrimSuffix
 
 	err := template.Must(template.New("").
 		Funcs(f).
