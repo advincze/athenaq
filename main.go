@@ -32,6 +32,7 @@ func main() {
 		athenaS3PathTemplate = flag.String("temp.path", `s3://aws-athena-query-results-{{ Account }}-{{ .Region }}/Unsaved/{{ Now.Format "2006"}}/{{ Now.Format "01" }}/{{ Now.Format "02"}}`, "athena result bucket")
 		awsRegion            = flag.String("region", "eu-central-1", "aws region")
 		output               = flag.String("out", "", `output path ("-" == no output| "" == STDOUT | file://... | s3://...)`)
+		inputFile            = flag.String("f", "", `input file (""== STDIN)`)
 		dry                  = flag.Bool("dry", false, "dry run")
 	)
 	flag.Parse()
@@ -45,7 +46,21 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 
-	queries, err := readQueries(os.Stdin)
+	var input io.Reader
+	switch *inputFile {
+	case "":
+		input = os.Stdin
+	default:
+		f, err := os.Open(*inputFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "could open input file: %v", err)
+			os.Exit(1)
+		}
+		defer f.Close()
+		input = f
+	}
+
+	queries, err := readQueries(input)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "could not read queries: %v", err)
 		os.Exit(1)
