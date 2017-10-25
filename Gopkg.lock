@@ -10,8 +10,8 @@
 [[projects]]
   name = "github.com/aws/aws-sdk-go"
   packages = ["aws","aws/awserr","aws/awsutil","aws/client","aws/client/metadata","aws/corehandlers","aws/credentials","aws/credentials/ec2rolecreds","aws/credentials/endpointcreds","aws/credentials/stscreds","aws/defaults","aws/ec2metadata","aws/endpoints","aws/request","aws/session","aws/signer/v4","internal/shareddefaults","private/protocol","private/protocol/json/jsonutil","private/protocol/jsonrpc","private/protocol/query","private/protocol/query/queryutil","private/protocol/rest","private/protocol/restxml","private/protocol/xml/xmlutil","service/athena","service/s3","service/sts"]
-  revision = "21a783c1e3d759f7f0c0a6cdbd4acd56081a5cbb"
-  version = "v1.12.13"
+  revision = "f426770fd5a4bae6186b280d4af7dca83a4cdef4"
+  version = "v1.12.17"
 
 [[projects]]
   name = "github.com/go-ini/ini"
@@ -24,9 +24,15 @@
   packages = ["."]
   revision = "0b12d6b5"
 
+[[projects]]
+  name = "github.com/pkg/errors"
+  packages = ["."]
+  revision = "645ef00459ed84a119197bfb8d8205042c6df63d"
+  version = "v0.8.0"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "53bf77ea40cfb68ae179f59c842ce42e6a002064ae9bff2dcc5a472834bb81e6"
+  inputs-digest = "91ec41b88b67ebc40847fcb81ad1c9305624b9a495a1d24cb39014efed363ab7"
   solver-name = "gps-cdcl"
   solver-version = 1
