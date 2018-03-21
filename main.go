@@ -14,16 +14,14 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/pkg/errors"
-
 	"github.com/advincze/s3path"
-
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/athena"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/pkg/errors"
 )
 
 func main() {

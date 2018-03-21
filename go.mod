@@ -1,0 +1,17 @@
+module "github.com/advincze/athenaq"
+
+require (
+	"github.com/advincze/s3path" v0.0.1
+	"github.com/aws/aws-sdk-go" v1.13.17
+	"github.com/go-ini/ini" v1.33.0
+	"github.com/jmespath/go-jmespath" v0.0.0-20180206201540-c2b33e8439af
+	"github.com/jtolds/gls" v0.0.0-20170503224851-77f18212c9c7
+	"github.com/pkg/errors" v0.8.0
+	"github.com/smartystreets/assertions" v0.0.0-20180301161246-7678a5452ebe
+	"github.com/smartystreets/goconvey" v0.0.0-20180222194500-ef6db91d284a
+	"github.com/smartystreets/gunit" v0.0.0-20180314194857-6f0d6275bdcd
+	"github.com/stretchr/testify" v1.2.1
+	"golang.org/x/net" v0.0.0-20180320002117-6078986fec03
+	"golang.org/x/text" v0.0.0-20171214130843-f21a4dfb5e38
+	"gopkg.in/ini.v1" v1.33.0-gopkgin-v1.33.0
+)
